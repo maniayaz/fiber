@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type FormEvent } from "react";
+import { useState, useSyncExternalStore, type FormEvent } from "react";
 import { Star } from "lucide-react";
 import { useAppPreferences } from "@/components/app-shell";
 
@@ -13,6 +13,15 @@ type Review = {
 
 const storageKey = "fiber-link-reviews";
 const maxCommentLength = 500;
+const reviewChangeEvent = "fiber-link-reviews-change";
+
+type ReviewsSnapshot = {
+  reviews: Review[];
+  error: "storage" | "invalid" | null;
+};
+
+const emptyReviewsSnapshot: ReviewsSnapshot = { reviews: [], error: null };
+let cachedReviewsSnapshot: ReviewsSnapshot | null = null;
 
 const copy = {
   en: {
@@ -25,12 +34,10 @@ const copy = {
     placeholder: "Write your review (up to 500 characters)",
     submit: "Share review",
     requiredRating: "Please choose a star rating before sharing your review.",
+    requiredComment: "Please write a comment before sharing your review.",
     emptyTitle: "No reviews on this browser yet",
     emptyDescription: "Your review will appear here after you share it.",
     reviews: "Reviews on this browser",
-    oneReview: "1 review",
-    reviewCount: "reviews",
-    loading: "Loading reviews…",
     saved: "Your review was saved in this browser.",
     storageError: "Reviews could not be loaded or saved in this browser. Check your browser storage settings and try again.",
     invalidData: "Saved review data is invalid. Reviews were not changed.",
@@ -47,12 +54,10 @@ const copy = {
     placeholder: "Apna review likhein (500 characters tak)",
     submit: "Review share karein",
     requiredRating: "Review share karne se pehle star rating chunein.",
+    requiredComment: "Review share karne se pehle apna comment likhein.",
     emptyTitle: "Is browser mein abhi koi review nahi",
     emptyDescription: "Share karne ke baad aap ka review yahan nazar aayega.",
     reviews: "Is browser ke reviews",
-    oneReview: "1 review",
-    reviewCount: "reviews",
-    loading: "Reviews load ho rahe hain…",
     saved: "Aap ka review is browser mein save ho gaya.",
     storageError: "Reviews is browser mein load ya save nahi ho sake. Browser storage settings check karke dobara koshish karein.",
     invalidData: "Saved review data durust nahi. Reviews mein koi tabdeeli nahi ki gayi.",
@@ -78,32 +83,72 @@ function isReview(value: unknown): value is Review {
   );
 }
 
+function getReviewsSnapshot(): ReviewsSnapshot {
+  if (cachedReviewsSnapshot) return cachedReviewsSnapshot;
+
+  let savedReviews: string | null;
+  try {
+    savedReviews = window.localStorage.getItem(storageKey);
+  } catch {
+    cachedReviewsSnapshot = { reviews: [], error: "storage" };
+    return cachedReviewsSnapshot;
+  }
+
+  if (!savedReviews) {
+    cachedReviewsSnapshot = emptyReviewsSnapshot;
+    return cachedReviewsSnapshot;
+  }
+
+  try {
+    const parsed: unknown = JSON.parse(savedReviews);
+    if (!Array.isArray(parsed) || !parsed.every(isReview)) {
+      cachedReviewsSnapshot = { reviews: [], error: "invalid" };
+    } else {
+      cachedReviewsSnapshot = { reviews: parsed, error: null };
+    }
+  } catch {
+    cachedReviewsSnapshot = { reviews: [], error: "invalid" };
+  }
+  return cachedReviewsSnapshot;
+}
+
+function getServerReviewsSnapshot() {
+  return emptyReviewsSnapshot;
+}
+
+function subscribeToReviews(onChange: () => void) {
+  function handleChange() {
+    cachedReviewsSnapshot = null;
+    onChange();
+  }
+
+  window.addEventListener("storage", handleChange);
+  window.addEventListener(reviewChangeEvent, handleChange);
+  return () => {
+    window.removeEventListener("storage", handleChange);
+    window.removeEventListener(reviewChangeEvent, handleChange);
+  };
+}
+
 export function ReviewsSection() {
   const locale = useAppPreferences();
   const t = copy[locale];
-  const [reviews, setReviews] = useState<Review[]>([]);
+  const snapshot = useSyncExternalStore(
+    subscribeToReviews,
+    getReviewsSnapshot,
+    getServerReviewsSnapshot,
+  );
+  const { reviews } = snapshot;
+  const storageError =
+    snapshot.error === "invalid"
+      ? t.invalidData
+      : snapshot.error === "storage"
+        ? t.storageError
+        : "";
   const [rating, setRating] = useState(0);
   const [comment, setComment] = useState("");
-  const [storageReady, setStorageReady] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
-
-  useEffect(() => {
-    try {
-      const savedReviews = window.localStorage.getItem(storageKey);
-      if (savedReviews) {
-        const parsed: unknown = JSON.parse(savedReviews);
-        if (!Array.isArray(parsed) || !parsed.every(isReview)) {
-          setError(t.invalidData);
-          return;
-        }
-        setReviews(parsed);
-      }
-      setStorageReady(true);
-    } catch {
-      setError(t.storageError);
-    }
-  }, [t.invalidData, t.storageError]);
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -115,21 +160,30 @@ export function ReviewsSection() {
       return;
     }
 
+    const trimmedComment = comment.trim();
+    if (!trimmedComment) {
+      setError(t.requiredComment);
+      return;
+    }
+
     const newReview: Review = {
       id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
       rating,
-      comment: comment.trim(),
+      comment: trimmedComment,
       createdAt: new Date().toISOString(),
     };
     const nextReviews = [newReview, ...reviews];
 
     try {
       window.localStorage.setItem(storageKey, JSON.stringify(nextReviews));
-      setReviews(nextReviews);
+      cachedReviewsSnapshot = { reviews: nextReviews, error: null };
+      window.dispatchEvent(new Event(reviewChangeEvent));
       setRating(0);
       setComment("");
       setMessage(t.saved);
     } catch {
+      cachedReviewsSnapshot = { reviews, error: "storage" };
+      window.dispatchEvent(new Event(reviewChangeEvent));
       setError(t.storageError);
     }
   }
@@ -175,19 +229,19 @@ export function ReviewsSection() {
             />
             <div className="review-form-footer">
               <span>{comment.length}/{maxCommentLength}</span>
-              <button className="button button-small" disabled={!storageReady} type="submit">
+              <button className="button button-small" disabled={snapshot.error !== null} type="submit">
                 {t.submit}
               </button>
             </div>
-            {error && <p className="review-message error" role="alert">{error}</p>}
+            {(storageError || error) && (
+              <p className="review-message error" role="alert">{storageError || error}</p>
+            )}
             {message && <p className="review-message" role="status">{message}</p>}
           </form>
 
           <div className="review-list" aria-live="polite">
             <h3>{t.reviews} <span>({reviews.length})</span></h3>
-            {!storageReady ? (
-              <p className="review-empty">{error || t.loading}</p>
-            ) : reviews.length === 0 ? (
+            {reviews.length === 0 ? (
               <div className="review-empty">
                 <strong>{t.emptyTitle}</strong>
                 <p>{t.emptyDescription}</p>

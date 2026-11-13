@@ -26,12 +26,20 @@ type Locale = "en" | "roman-ur";
 type Theme = "light" | "dark";
 
 const preferenceEvent = "fiber-link-preference-change";
+let inMemoryLocale: Locale | null = null;
+let inMemoryTheme: Theme | null = null;
 
 function subscribeToPreferences(onChange: () => void) {
-  window.addEventListener("storage", onChange);
+  function handleStorageChange() {
+    inMemoryLocale = null;
+    inMemoryTheme = null;
+    onChange();
+  }
+
+  window.addEventListener("storage", handleStorageChange);
   window.addEventListener(preferenceEvent, onChange);
   return () => {
-    window.removeEventListener("storage", onChange);
+    window.removeEventListener("storage", handleStorageChange);
     window.removeEventListener(preferenceEvent, onChange);
   };
 }
@@ -41,24 +49,46 @@ function notifyPreferenceChange() {
 }
 
 function setLocalePreference(locale: Locale) {
-  window.localStorage.setItem("fiber-link-locale", locale);
+  try {
+    window.localStorage.setItem("fiber-link-locale", locale);
+    inMemoryLocale = null;
+  } catch {
+    inMemoryLocale = locale;
+    console.warn("Could not save the language preference; using it for this session only.");
+  }
   notifyPreferenceChange();
 }
 
 function setThemePreference(theme: Theme) {
-  window.localStorage.setItem("fiber-link-theme", theme);
+  try {
+    window.localStorage.setItem("fiber-link-theme", theme);
+    inMemoryTheme = null;
+  } catch {
+    inMemoryTheme = theme;
+    console.warn("Could not save the appearance preference; using it for this session only.");
+  }
   notifyPreferenceChange();
 }
 
 function getLocaleSnapshot(): Locale {
-  return window.localStorage.getItem("fiber-link-locale") === "roman-ur"
-    ? "roman-ur"
-    : "en";
+  if (inMemoryLocale) return inMemoryLocale;
+  try {
+    return window.localStorage.getItem("fiber-link-locale") === "roman-ur"
+      ? "roman-ur"
+      : "en";
+  } catch {
+    return "en";
+  }
 }
 
 function getThemeSnapshot(): Theme {
-  const savedTheme = window.localStorage.getItem("fiber-link-theme");
-  if (savedTheme === "light" || savedTheme === "dark") return savedTheme;
+  if (inMemoryTheme) return inMemoryTheme;
+  try {
+    const savedTheme = window.localStorage.getItem("fiber-link-theme");
+    if (savedTheme === "light" || savedTheme === "dark") return savedTheme;
+  } catch {
+    return "light";
+  }
   return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
 }
 
