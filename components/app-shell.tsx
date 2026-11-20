@@ -13,6 +13,7 @@ import {
   UserCircle,
   X,
 } from "lucide-react";
+import { usePathname } from "next/navigation";
 import { SignalLink } from "@/components/signal-link";
 import {
   useEffect,
@@ -297,6 +298,11 @@ function Header() {
 }
 
 export function AppShell({ children }: { children: ReactNode }) {
+  const pathname = usePathname();
+  const isAdminRoute = pathname === "/admin" || pathname.startsWith("/admin/");
+
+  if (isAdminRoute) return children;
+
   return (
     <>
       <Header />

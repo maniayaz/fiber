@@ -36,17 +36,17 @@ npm.cmd run build
 - Profile menu with sign-in, settings, and admin preview links
 - Public landing, package, and coverage placeholder pages
 - About and contact pages with verified-information placeholders
-- Admin workspace preview at `/admin` with payment, subscription, customer, package, settings, audit-history, and sign-in-preview routes
+- Admin workspace at `/admin` with Supabase email/password sign-in, a server-side admin email allowlist, and payment, subscription, customer, package, settings, and audit-history preview routes
 - Light/dark appearance selection on the personal settings page
 - Customer help assistant with browser speech input and spoken replies when supported
 
 The help assistant answers general questions only; it is not connected to a live agent or customer account. With Roman Urdu selected, its guidance and spoken replies are in Roman Urdu. The browser voice uses the Pakistani English speech locale because Roman Urdu is written in Latin letters; recognition and pronunciation depend on browser support and available voices. Audio is handled by the browser's speech service and may be processed under that provider's privacy policy. Customers are warned not to share passwords, payment information, or private documents.
 
-The admin screens are **not protected by authentication yet** and must not be used for real operations. They show empty preview states only. Supabase authentication, server-side role enforcement, database migrations, and Row Level Security are required before connecting business data or enabling admin actions.
+The admin workspace requires a Supabase-authenticated account whose email is listed in the server-only `ADMIN_EMAILS` variable (comma-separated). Create each account in Supabase Auth and add only authorized admin addresses to that variable. Admin route access is checked on the server. The screens still show empty preview states and must not be used for real operations; database migrations, Row Level Security, and audited admin actions are not implemented.
 
 ## Environment configuration
 
-Copy `.env.example` to `.env.local` when the backend phase begins. Supabase and email integrations are not active yet. Never put a Supabase service-role key in a `NEXT_PUBLIC_*` variable or expose it to browser code.
+Copy `.env.example` to `.env.local` and set your Supabase project URL, publishable key, and authorized admin email address(es). The Supabase publishable key is safe for browser use; never put a Supabase service-role key in a `NEXT_PUBLIC_*` variable or expose it to browser code. Do not commit `.env.local`.
 
 Do not add real package prices, support details, payment instructions, coverage claims, or admin accounts until Fiber Link has supplied verified values.
 
